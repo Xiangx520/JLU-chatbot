@@ -1,0 +1,20 @@
+# 本地密钥与配置；只提交无真实密钥的示例。
+.env
+.env.*
+!.env.example
+
+# Python 虚拟环境、缓存和构建产物。
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+
+# 短期记忆数据库及 SQLite 的日志文件。
+/src/JLU_agent/repo/short-term_memory/*.db
+/src/JLU_agent/repo/short-term_memory/*.db-*
+
+# 编辑器配置。
+.idea/

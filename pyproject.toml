@@ -1,12 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "jlu-chatbot-main"
 version = "0.1.0"
 requires-python = ">=3.13"
 dependencies = [
+    "dashscope>=1.27.7",
     "langchain>=1.4.2",
+    "langchain-chroma>=1.1.0",
+    "langchain-community>=0.4.2",
+    "langchain-deepseek>=1.1.1",
+    "langchain-text-splitters>=1.1.2",
+    "langgraph-checkpoint-sqlite>=3.1.1",
+    "python-dotenv>=1.2.3",
     "streamlit>=1.64.0",
 ]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
 
 [[tool.uv.index]]
 url = "https://pypi.tuna.tsinghua.edu.cn/simple"
 default = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["JLU_agent*"]
+namespaces = false
