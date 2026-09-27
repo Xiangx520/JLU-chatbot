@@ -2,4 +2,11 @@
 name = "jlu-chatbot-main"
 version = "0.1.0"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "langchain>=1.4.2",
+    "streamlit>=1.64.0",
+]
+
+[[tool.uv.index]]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+default = true
