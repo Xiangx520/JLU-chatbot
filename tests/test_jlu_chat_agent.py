@@ -19,6 +19,7 @@ from JLU_agent.agents import jlu_chat_agent as agent_module
 from JLU_agent.config import agent_config as config
 from JLU_agent.config import chroma_config
 from JLU_agent.schemas.agent_prompts import CHAT_MODEL_SYSTEM_PROMPT
+from JLU_agent.schemas import agent_prompts
 from JLU_agent.services.RAG import vector_store
 from JLU_agent.tools import knowledge_tools
 
@@ -79,6 +80,16 @@ class JLUChatAgentTests(unittest.TestCase):
         self.service_constructor = service_patch.start()
         self.addCleanup(service_patch.stop)
 
+        self.rewrite_model = Mock()
+        self.rewrite_model.invoke.return_value = AIMessage(
+            content="吉林大学始建于哪一年？"
+        )
+        rewrite_patch = patch.object(
+            knowledge_tools, "init_chat_model", return_value=self.rewrite_model
+        )
+        self.rewrite_initializer = rewrite_patch.start()
+        self.addCleanup(rewrite_patch.stop)
+
     def make_agent(
         self, responses: list[BaseMessage]
     ) -> tuple[agent_module.JLUChatAgent, RecordingChatModel]:
@@ -99,6 +110,8 @@ class JLUChatAgentTests(unittest.TestCase):
         self.assertEqual(model.bound_tool_names, ["search_knowledge_base"])
         self.service_constructor.assert_called_once_with()
         self.vector_store.search.assert_not_called()
+        self.rewrite_initializer.assert_called_once()
+        self.rewrite_model.invoke.assert_not_called()
 
     def test_same_thread_keeps_history(self) -> None:
         agent, model = self.make_agent(
@@ -177,13 +190,20 @@ class JLUChatAgentTests(unittest.TestCase):
             page_content="吉林大学始建于1946年。",
             metadata={"source": "introduction.txt"},
         )]
+        self.rewrite_model.invoke.return_value = AIMessage(
+            content="吉林大学的建校年份是什么？"
+        )
         answer = "吉林大学始建于1946年。（来源：introduction.txt）"
         agent, model = self.make_agent([
             self.knowledge_request(), AIMessage(content=answer),
         ])
 
         self.assertEqual(agent.chat("吉林大学始建于哪一年？", "rag-thread"), answer)
-        self.vector_store.search.assert_called_once_with("吉林大学始建于哪一年？")
+        self.vector_store.search.assert_called_once_with("吉林大学的建校年份是什么？")
+        self.rewrite_model.invoke.assert_called_once_with(
+            agent_prompts.REWRITE_PROMPT.format(query="吉林大学始建于哪一年？")
+        )
+        self.assertEqual(model.received_messages[0][-1].content, "吉林大学始建于哪一年？")
         self.assertEqual(len(model.received_messages), 2)
         tool_reply = model.received_messages[1][-1]
         self.assertIsInstance(tool_reply, ToolMessage)

@@ -1,5 +1,5 @@
 import streamlit as st
-from JLU_agent.services.RAG.vector_store import VectorStoreService
+from JLU_agent.services.RAG.file_ls import FileLoaderAndSearchService
 
 
 st.title("📚 知识加载")
@@ -14,8 +14,8 @@ uploaded_file = st.file_uploader(
 )
 
 #创建知识库的服务
-if "vector_store_service" not in st.session_state:
-    st.session_state["vector_store_service"] = VectorStoreService()
+if "file_ls_service" not in st.session_state:
+    st.session_state["file_ls_service"] = FileLoaderAndSearchService()
 
 
 if uploaded_file is not None:
@@ -42,9 +42,9 @@ if uploaded_file is not None:
             st.subheader("文件内容预览")
             st.code(text, language=None, wrap_lines=True, height=300)
 
-            # load the file into chroma
+            # load the file into stores
             with st.spinner("uploading file..."):
-                result = st.session_state["vector_store_service"].upload_by_str(
+                result = st.session_state["file_ls_service"].upload_by_doc(
                     text, file_name
                 )
                 st.write(result)

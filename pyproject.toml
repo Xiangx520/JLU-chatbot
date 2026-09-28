@@ -7,6 +7,7 @@ name = "jlu-chatbot-main"
 version = "0.1.0"
 requires-python = ">=3.13"
 dependencies = [
+    "bm25s>=0.3.11",
     "dashscope>=1.27.7",
     "langchain>=1.4.2",
     "langchain-chroma>=1.1.0",
@@ -14,6 +15,7 @@ dependencies = [
     "langchain-deepseek>=1.1.1",
     "langchain-text-splitters>=1.1.2",
     "langgraph-checkpoint-sqlite>=3.1.1",
+    "pkuseg>=0.0.25",
     "python-dotenv>=1.2.3",
     "streamlit>=1.64.0",
 ]
@@ -29,3 +31,6 @@ default = true
 where = ["src"]
 include = ["JLU_agent*"]
 namespaces = false
+
+[tool.uv.extra-build-dependencies]
+pkuseg = ["numpy"]

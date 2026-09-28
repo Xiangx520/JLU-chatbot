@@ -68,7 +68,7 @@ class JLUChatAgent:
         if not isinstance(message, str):
             raise TypeError("问题必须是字符串。")
 
-        message = message.strip()       #洁净问题中的空格或换行符
+        message = message.strip()       #过滤问题中的空格或换行符
         # 检查问题是否为空
         if not message:
             raise ValueError("问题不能为空，请输入问题后再试。")

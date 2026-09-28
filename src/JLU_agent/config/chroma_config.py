@@ -2,9 +2,7 @@ from pathlib import Path
 import os
 from dotenv import dotenv_values
 
-#向量数据库相关配置
-
-
+# chroma数据库相关配置
 
 # 根据当前文件定位项目根目录，不依赖运行命令时所在的目录。
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -37,13 +35,21 @@ def get_dashscope_api_key() -> str:
 COLLECTION_NAME = "str_rag"         # 目前只支持文本格式的数据向量化
 # chroma数据库地址
 PERSIST_DIRECTORY = DATA_DIR / "chroma_db"
-
-K = 3  # 每次检索返回的最大文本片段数
-DATA_PATH = ""
-MD5_HEX_STORE = ""
-ALLOW_KNOWLEDGE_FILE_TYPE = []
+# 每次检索返回的最大文本片段数
+K = 3
 
 # 文本切割器相关参数
 CHUNK_SIZE = 1000
 CHUNK_OVERLAP = 100
 SEPARATORS = ["\n\n", "\n", ".", "!", "?", "。", "！", "？", " ", ""]
+
+
+
+# 索引数据库相关配置
+
+# 索引数据库地址
+INDEX_PATH = DATA_DIR / "index_db"
+K1 = 1.5
+B = 0.75
+
+

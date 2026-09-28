@@ -7,7 +7,7 @@ import hashlib
 
 class Md5Service:
 
-    def check_md5(md5_str: str):
+    def check_md5(self, md5_str: str):
         """检查传入的md5字符串是否已经被处理
             return
                 False: 文件未处理
@@ -26,13 +26,13 @@ class Md5Service:
                         return True
             return False
 
-    def save_md5(md5_str: str):
+    def save_md5(self, md5_str: str):
         """将传入的md5字符串记录到文件内保存"""
         config.MD5_PATH.parent.mkdir(parents=True, exist_ok=True)
         with config.MD5_PATH.open('a', encoding="utf-8") as f:
             f.write(md5_str + '\n')
 
-    def get_string_md5(input_str: str, encoding='utf-8'):
+    def get_string_md5(self, input_str: str, encoding='utf-8'):
         """将传入的字符串转换成md5字符串"""
 
         #将字符串转换成bytes字节数组

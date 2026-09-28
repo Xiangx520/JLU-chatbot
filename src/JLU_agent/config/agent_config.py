@@ -46,3 +46,9 @@ def get_deepseek_api_key() -> str:
 # SQLite 短期记忆的存储目录和数据库文件路径。
 CHECKPOINT_DIR = PROJECT_ROOT / "src" / "JLU_agent" / "repo" / "short-term_memory"
 CHECKPOINT_DB_PATH = CHECKPOINT_DIR / "checkpoint.db"
+
+
+
+
+# 检索关键词重写模型
+REWRITE_MODEL_NAME = "deepseek-flash"
