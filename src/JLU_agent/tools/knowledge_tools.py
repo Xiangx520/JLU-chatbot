@@ -10,8 +10,9 @@ from langchain_core.tools import BaseTool
 from JLU_agent.config import agent_config as config
 from JLU_agent.schemas import agent_prompts
 
+
 if TYPE_CHECKING:
-    from JLU_agent.services.RAG.vector_store import VectorStoreService
+    from JLU_agent.services.RAG.file_ls import FileLoaderAndSearchService
 
 
 logger = logging.getLogger(__name__)
@@ -35,7 +36,7 @@ def rewrite_query(query: str) -> str:
 
 
 
-def create_tools(vector_store_service: "VectorStoreService") -> list[BaseTool]:
+def create_tools(file_ls_service: "FileLoaderAndSearchService") -> list[BaseTool]:
 
     @tool
     def search_knowledge_base(query: str) -> str:
@@ -57,15 +58,16 @@ def create_tools(vector_store_service: "VectorStoreService") -> list[BaseTool]:
             rewritten_query = query
 
         # 文档检索
-        documents = vector_store_service.search(rewritten_query)
+        documents = file_ls_service.search(rewritten_query)
         passages = []
         for document in documents:
-            content = document.page_content.strip()
+            content = document[0].page_content.strip()
             if not content:
                 continue
-            source = document.metadata.get("source") or "未知来源"
+            source = document[0].metadata.get("source") or "未知来源"
+            score = document[1]
             passages.append(
-                f"[{len(passages) + 1}]\n来源：{source}\n正文：{content}"
+                f"[{len(passages) + 1}]\n来源：{source}\n正文：{content}\n得分：{score}"
             )
 
         if not passages:

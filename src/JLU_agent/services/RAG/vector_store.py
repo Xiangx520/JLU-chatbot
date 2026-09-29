@@ -34,7 +34,7 @@ class VectorStoreService:
 
 
 
-    def search(self, query: str) -> list[Document]:
+    def search(self, query: str) -> list[tuple[Document, float | int]]:
         """按问题检索已有知识，返回正文和来源，不重新写入数据。"""
         if not isinstance(query, str):
             raise TypeError("检索问题必须是字符串。")
@@ -42,4 +42,4 @@ class VectorStoreService:
         if not query:
             raise ValueError("检索问题不能为空。")
 
-        return self.chroma.similarity_search(query, k=config.K)
+        return self.chroma.similarity_search_with_score(query, k=config.K)

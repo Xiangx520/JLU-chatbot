@@ -10,7 +10,7 @@ from langchain.agents.middleware import SummarizationMiddleware
 
 from JLU_agent.config import agent_config as config
 from JLU_agent.schemas import agent_prompts as prompts
-from JLU_agent.services.RAG.vector_store import VectorStoreService
+from JLU_agent.services.RAG.file_ls import FileLoaderAndSearchService
 from JLU_agent.tools.knowledge_tools import create_tools
 
 
@@ -31,8 +31,8 @@ class JLUChatAgent:
         )
 
         # 每个 Agent 只创建一次检索服务，工具的定义和列表组装放在 tools 中。
-        vector_store_service = VectorStoreService()
-        tools = create_tools(vector_store_service)
+        file_ls_service = FileLoaderAndSearchService()
+        tools = create_tools(file_ls_service)
 
         # 会话短期记忆管理,用sqlite存储会话记忆
         # 先确保目录存在，再使用配置中的数据库路径初始化 checkpointer。

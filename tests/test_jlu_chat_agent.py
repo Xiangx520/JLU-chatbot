@@ -20,7 +20,7 @@ from JLU_agent.config import agent_config as config
 from JLU_agent.config import chroma_config
 from JLU_agent.schemas.agent_prompts import CHAT_MODEL_SYSTEM_PROMPT
 from JLU_agent.schemas import agent_prompts
-from JLU_agent.services.RAG import vector_store
+from JLU_agent.services.RAG import file_ls, vector_store
 from JLU_agent.tools import knowledge_tools
 
 
@@ -72,10 +72,10 @@ class JLUChatAgentTests(unittest.TestCase):
             config_patch.start()
             self.addCleanup(config_patch.stop)
 
-        self.vector_store = Mock(spec=vector_store.VectorStoreService)
-        self.vector_store.search.return_value = []
+        self.file_ls_service = Mock(spec=file_ls.FileLoaderAndSearchService)
+        self.file_ls_service.search.return_value = []
         service_patch = patch.object(
-            agent_module, "VectorStoreService", return_value=self.vector_store
+            agent_module, "FileLoaderAndSearchService", return_value=self.file_ls_service
         )
         self.service_constructor = service_patch.start()
         self.addCleanup(service_patch.stop)
@@ -109,8 +109,8 @@ class JLUChatAgentTests(unittest.TestCase):
         self.assertEqual(messages[1].content, "你好")
         self.assertEqual(model.bound_tool_names, ["search_knowledge_base"])
         self.service_constructor.assert_called_once_with()
-        self.vector_store.search.assert_not_called()
-        self.rewrite_initializer.assert_called_once()
+        self.file_ls_service.search.assert_not_called()
+        self.rewrite_initializer.assert_not_called()
         self.rewrite_model.invoke.assert_not_called()
 
     def test_same_thread_keeps_history(self) -> None:
@@ -149,7 +149,7 @@ class JLUChatAgentTests(unittest.TestCase):
             with self.subTest(message=message), self.assertRaises(TypeError):
                 agent.chat(message, "thread-1")
         self.assertEqual(model.received_messages, [])
-        self.vector_store.search.assert_not_called()
+        self.file_ls_service.search.assert_not_called()
 
     def test_text_blocks_are_returned_as_a_string(self) -> None:
         reply = AIMessage(
@@ -186,9 +186,12 @@ class JLUChatAgentTests(unittest.TestCase):
         )
 
     def test_agent_calls_tool_and_receives_knowledge(self) -> None:
-        self.vector_store.search.return_value = [Document(
-            page_content="吉林大学始建于1946年。",
-            metadata={"source": "introduction.txt"},
+        self.file_ls_service.search.return_value = [(
+            Document(
+                page_content="吉林大学始建于1946年。",
+                metadata={"source": "introduction.txt"},
+            ),
+            0.75,
         )]
         self.rewrite_model.invoke.return_value = AIMessage(
             content="吉林大学的建校年份是什么？"
@@ -199,7 +202,7 @@ class JLUChatAgentTests(unittest.TestCase):
         ])
 
         self.assertEqual(agent.chat("吉林大学始建于哪一年？", "rag-thread"), answer)
-        self.vector_store.search.assert_called_once_with("吉林大学的建校年份是什么？")
+        self.file_ls_service.search.assert_called_once_with("吉林大学的建校年份是什么？")
         self.rewrite_model.invoke.assert_called_once_with(
             agent_prompts.REWRITE_PROMPT.format(query="吉林大学始建于哪一年？")
         )
@@ -221,8 +224,8 @@ class JLUChatAgentTests(unittest.TestCase):
         self.assertIn("知识库中暂无足够资料", model.received_messages[1][-1].content)
 
     def test_search_error_is_preserved(self) -> None:
-        error = ConnectionError("模拟向量服务连接失败")
-        self.vector_store.search.side_effect = error
+        error = ConnectionError("模拟知识库检索失败")
+        self.file_ls_service.search.side_effect = error
         agent, model = self.make_agent([self.knowledge_request()])
 
         with self.assertRaises(ConnectionError) as context:
@@ -231,9 +234,12 @@ class JLUChatAgentTests(unittest.TestCase):
         self.assertEqual(len(model.received_messages), 1)
 
     def test_summarization_still_runs_with_tools(self) -> None:
-        self.vector_store.search.return_value = [Document(
-            page_content="吉林大学始建于1946年。",
-            metadata={"source": "introduction.txt"},
+        self.file_ls_service.search.return_value = [(
+            Document(
+                page_content="吉林大学始建于1946年。",
+                metadata={"source": "introduction.txt"},
+            ),
+            0.75,
         )]
         with patch.object(config, "SUMMARIZE_TRIGGER_MESSAGES", 6), patch.object(
             config, "SUMMARIZE_KEEP_MESSAGES", 2
