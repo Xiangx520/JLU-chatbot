@@ -16,6 +16,9 @@ MD5_PATH = DATA_DIR / "md5.txt"
 
 # 向量模型
 DASHSCOPE_EMBEDDING_MODEL = "qwen3.7-text-embedding-flash"
+# 本地交叉编码重排模型
+RERANK_MODEL = "Qwen/Qwen3-Reranker-0.6B"
+
 
 def get_dashscope_api_key() -> str:
     """读取 dashscope 密钥，系统环境变量优先于项目的 .env 文件。"""

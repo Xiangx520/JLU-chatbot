@@ -53,6 +53,19 @@ class JLUChatAgentTests(unittest.TestCase):
         key_patch = patch.object(config, "get_deepseek_api_key", return_value="test-key")
         key_patch.start()
         self.addCleanup(key_patch.stop)
+        tavily_key_patch = patch.object(
+            config, "get_tavily_api_key", return_value="test-tavily-key"
+        )
+        tavily_key_patch.start()
+        self.addCleanup(tavily_key_patch.stop)
+
+        self.tavily = Mock()
+        self.tavily.invoke.return_value = {"results": []}
+        tavily_patch = patch.object(
+            knowledge_tools, "TavilySearch", return_value=self.tavily
+        )
+        tavily_patch.start()
+        self.addCleanup(tavily_patch.stop)
 
         tracing_patch = patch.dict(
             os.environ,
@@ -107,9 +120,12 @@ class JLUChatAgentTests(unittest.TestCase):
         self.assertEqual([message.type for message in messages], ["system", "human"])
         self.assertEqual(messages[0].content, CHAT_MODEL_SYSTEM_PROMPT)
         self.assertEqual(messages[1].content, "你好")
-        self.assertEqual(model.bound_tool_names, ["search_knowledge_base"])
+        self.assertEqual(
+            model.bound_tool_names, ["search_knowledge_base", "search_tavily_web"]
+        )
         self.service_constructor.assert_called_once_with()
         self.file_ls_service.search.assert_not_called()
+        self.tavily.invoke.assert_not_called()
         self.rewrite_initializer.assert_not_called()
         self.rewrite_model.invoke.assert_not_called()
 
@@ -220,8 +236,46 @@ class JLUChatAgentTests(unittest.TestCase):
             self.knowledge_request(), AIMessage(content=answer),
         ])
 
-        self.assertEqual(agent.chat("吉林大学始建于哪一年？", "empty-thread"), answer)
+        result = agent.chat_with_sources("吉林大学始建于哪一年？", "empty-thread")
+        self.assertEqual(result.answer, answer)
+        self.assertEqual(result.reference, [])
         self.assertIn("知识库中暂无足够资料", model.received_messages[1][-1].content)
+
+    def test_web_fallback_sources_belong_only_to_current_turn(self) -> None:
+        self.tavily.invoke.return_value = {"results": [
+            {
+                "title": "吉林大学官网",
+                "url": "https://www.jlu.edu.cn/news",
+                "content": "最新通知",
+            },
+        ]}
+        web_request = AIMessage(content="", tool_calls=[{
+            "name": "search_tavily_web",
+            "args": {"query": "吉林大学最新通知"},
+            "id": "web-call-1",
+            "type": "tool_call",
+        }])
+        agent, model = self.make_agent([
+            self.knowledge_request(),
+            web_request,
+            AIMessage(content="官网发布了最新通知。[来源](https://www.jlu.edu.cn/news)"),
+            AIMessage(content="不客气。"),
+        ])
+
+        result = agent.chat_with_sources("吉林大学最新通知", "web-thread")
+        self.assertEqual(
+            [(source.title, source.url) for source in result.reference],
+            [("吉林大学官网", "https://www.jlu.edu.cn/news")],
+        )
+        self.assertIn("知识库中暂无足够资料", model.received_messages[1][-1].content)
+        self.assertIsInstance(model.received_messages[2][-1], ToolMessage)
+        self.assertEqual(model.received_messages[2][-1].name, "search_tavily_web")
+        self.tavily.invoke.assert_called_once_with({"query": "吉林大学最新通知"})
+
+        next_result = agent.chat_with_sources("谢谢", "web-thread")
+        self.assertEqual(next_result.answer, "不客气。")
+        self.assertEqual(next_result.reference, [])
+        self.assertEqual(len(model.received_messages), 4)
 
     def test_search_error_is_preserved(self) -> None:
         error = ConnectionError("模拟知识库检索失败")
@@ -256,7 +310,7 @@ class JLUChatAgentTests(unittest.TestCase):
         self.assertEqual(agent.chat("再见", "summary-thread"), "再见！")
         self.assertEqual(len(model.received_messages), 5)
         summary_input = str(model.received_messages[3][0].content)
-        self.assertIn("对应来源文件名", summary_input)
+        self.assertIn("对应知识库文件名或网页标题与链接", summary_input)
         self.assertIn("introduction.txt", summary_input)
         self.assertIn("已查明始建于1946年", str(model.received_messages[4]))
 
@@ -312,6 +366,39 @@ class AgentConfigTests(unittest.TestCase):
         os.environ["DEEPSEEK_API_KEY"] = "  "
         with self.assertRaisesRegex(ValueError, "未配置 DEEPSEEK_API_KEY"):
             config.get_deepseek_api_key()
+
+    def test_tavily_key_uses_file_and_environment_priority(self) -> None:
+        self.env_file.write_text(
+            "TAVILY_API_KEY=file-key\nOTHER_SECRET=untouched\n", encoding="utf-8"
+        )
+        self.assertEqual(config.get_tavily_api_key(), "file-key")
+        self.assertNotIn("TAVILY_API_KEY", os.environ)
+        self.assertNotIn("OTHER_SECRET", os.environ)
+
+        os.environ["TAVILY_API_KEY"] = " environment-key "
+        self.assertEqual(config.get_tavily_api_key(), "environment-key")
+
+    def test_missing_or_blank_tavily_key_fails(self) -> None:
+        with self.assertRaisesRegex(ValueError, "未配置 TAVILY_API_KEY"):
+            config.get_tavily_api_key()
+
+        self.env_file.write_text("TAVILY_API_KEY=\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "未配置 TAVILY_API_KEY"):
+            config.get_tavily_api_key()
+
+        self.env_file.write_text("TAVILY_API_KEY=file-key\n", encoding="utf-8")
+        os.environ["TAVILY_API_KEY"] = "  "
+        with self.assertRaisesRegex(ValueError, "未配置 TAVILY_API_KEY"):
+            config.get_tavily_api_key()
+
+    def test_missing_tavily_key_fails_at_agent_initialization(self) -> None:
+        self.env_file.write_text("DEEPSEEK_API_KEY=test-key\n", encoding="utf-8")
+        with (
+            patch.object(agent_module, "init_chat_model", return_value=Mock()),
+            patch.object(agent_module, "FileLoaderAndSearchService", return_value=Mock()),
+        ):
+            with self.assertRaisesRegex(ValueError, "未配置 TAVILY_API_KEY"):
+                agent_module.JLUChatAgent()
 
 
 if __name__ == "__main__":

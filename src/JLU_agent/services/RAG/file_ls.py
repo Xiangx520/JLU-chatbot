@@ -4,7 +4,7 @@ from JLU_agent.services.RAG.index_store import IndexStoreService, UPLOAD_LOCK
 from JLU_agent.services.RAG.md5_str_file import Md5Service
 from JLU_agent.services.RAG.text_splitter import TextSplitterService
 from JLU_agent.services.RAG.vector_store import VectorStoreService
-from JLU_agent.services.RAG.docs_rerank import rerank
+from JLU_agent.services.RAG.docs_reranker import rerank
 
 
 
@@ -42,6 +42,6 @@ class FileLoaderAndSearchService:
         # 稀疏检索
         bm25_results = self.indexStoreService.search(query)
         # 重排序
-        reranked_results = rerank(vector_results, bm25_results)
+        reranked_results = rerank(query, vector_results, bm25_results)
 
         return reranked_results

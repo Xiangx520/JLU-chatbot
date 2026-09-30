@@ -48,7 +48,23 @@ CHECKPOINT_DIR = PROJECT_ROOT / "src" / "JLU_agent" / "repo" / "short-term_memor
 CHECKPOINT_DB_PATH = CHECKPOINT_DIR / "checkpoint.db"
 
 
-
-
 # 检索关键词重写模型
 REWRITE_MODEL_NAME = "deepseek-flash"
+
+
+# Tavily联网工具
+TAVILY_MAX_RESULTS = 5
+TAVILY_SEARCH_DEPTH = "basic"
+
+
+def get_tavily_api_key() -> str:
+    """读取 Tavily 密钥，系统环境变量优先于项目的 .env 文件。"""
+    api_key = os.getenv("TAVILY_API_KEY")
+    if api_key is None:
+        api_key = dotenv_values(ENV_FILE, encoding="utf-8").get("TAVILY_API_KEY")
+
+    if api_key is None or not api_key.strip():
+        raise ValueError(
+            "未配置 TAVILY_API_KEY，请在系统环境变量或项目根目录的 .env 中设置。"
+        )
+    return api_key.strip()
