@@ -1,22 +1,18 @@
 import streamlit as st
 from JLU_agent.services.RAG.file_ls import FileLoaderAndSearchService
+from JLU_agent.services.RAG.parse_file import FileParseError, FileParser
 
 
 st.title("📚 知识加载")
 
 
 
-# 一次上传一个 TXT 文件，文件暂存在内存中。
+# 文件暂存在内存中，选择文件只解析和预览。
 uploaded_file = st.file_uploader(
-    "上传 TXT 文件",
-    type=["txt"],
+    "上传知识文档（TXT、MD、PDF、DOCX）",
+    type=["txt", "md", "pdf", "docx"],
     accept_multiple_files=False,
 )
-
-#创建知识库的服务
-if "file_ls_service" not in st.session_state:
-    st.session_state["file_ls_service"] = FileLoaderAndSearchService()
-
 
 if uploaded_file is not None:
 
@@ -29,21 +25,18 @@ if uploaded_file is not None:
     st.subheader(f"file name: {file_name}")
     st.write(f"type: {file_type} | size: {file_size:.2f} KB")
 
-    # utf-8-sig 同时兼容普通 UTF-8 和带 BOM 的 UTF-8 文件。
     try:
-        text = uploaded_file.getvalue().decode("utf-8-sig")
-    except UnicodeDecodeError:
-        st.error("无法读取文件，请将 TXT 文件保存为 UTF-8 编码后重新上传。")
+        text = FileParser().parse_file(uploaded_file.getvalue(), file_name)
+    except FileParseError as exc:
+        st.error(str(exc))
     else:
-        if not text.strip():
-            st.warning("文件内容为空，请选择包含文本的 TXT 文件。")
-        else:
-            # 以只读纯文本展示内容，保留原文换行。
-            st.subheader("文件内容预览")
-            st.code(text, language=None, wrap_lines=True, height=300)
+        st.subheader("文件内容预览")
+        st.code(text, language=None, wrap_lines=True, height=300)
 
-            # load the file into stores
-            with st.spinner("uploading file..."):
+        if st.button("上传到知识库"):
+            with st.spinner("正在上传到知识库..."):
+                if "file_ls_service" not in st.session_state:
+                    st.session_state["file_ls_service"] = FileLoaderAndSearchService()
                 result = st.session_state["file_ls_service"].upload_by_doc(
                     text, file_name
                 )

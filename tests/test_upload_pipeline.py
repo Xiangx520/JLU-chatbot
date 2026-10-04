@@ -1,4 +1,4 @@
-"""在临时目录和模拟服务中检查 TXT 上传到两个知识库的流程。"""
+"""在临时目录和模拟服务中检查手动上传到两个知识库的流程。"""
 
 from __future__ import annotations
 
@@ -321,37 +321,104 @@ class ChromaPersistenceTests(unittest.TestCase):
 
 
 class KnowledgePageTests(unittest.TestCase):
-    def test_txt_only_single_file_and_upload_original_text(self) -> None:
-        uploaded_file = SimpleNamespace(
-            name="history.txt",
+    @staticmethod
+    def uploaded_file(name="history.txt", data="吉林大学历史".encode("utf-8")):
+        return SimpleNamespace(
+            name=name,
             type="text/plain",
-            size=len("吉林大学历史".encode("utf-8")),
-            getvalue=lambda: "吉林大学历史".encode("utf-8"),
+            size=len(data),
+            getvalue=lambda: data,
         )
-        fake_service = Mock()
-        fake_service.upload_by_doc.return_value = "[success]"
-        spinner = contextlib.nullcontext()
-        state: dict[str, object] = {}
-        page = Path(__file__).resolve().parents[1] / "streamlit_app" / "pages" / "app_knowledge.py"
 
+    def run_page(self, uploaded_file, clicked=False, state=None):
+        if state is None:
+            state = {}
+        service = Mock()
+        service.upload_by_doc.return_value = "[success]"
+        page = Path(__file__).resolve().parents[1] / "streamlit_app" / "pages" / "app_knowledge.py"
         with (
             patch.object(st, "session_state", state),
             patch.object(st, "title"),
             patch.object(st, "subheader"),
             patch.object(st, "write"),
-            patch.object(st, "code"),
-            patch.object(st, "error"),
-            patch.object(st, "warning"),
-            patch.object(st, "spinner", return_value=spinner),
+            patch.object(st, "code") as preview,
+            patch.object(st, "error") as error,
+            patch.object(st, "button", return_value=clicked) as button,
+            patch.object(st, "spinner", return_value=contextlib.nullcontext()),
             patch.object(st, "file_uploader", return_value=uploaded_file) as uploader,
-            patch.object(file_ls, "FileLoaderAndSearchService", return_value=fake_service) as constructor,
+            patch.object(file_ls, "FileLoaderAndSearchService", return_value=service) as constructor,
         ):
             runpy.run_path(str(page))
+        return SimpleNamespace(
+            preview=preview, error=error, button=button, uploader=uploader,
+            constructor=constructor, service=service, state=state,
+        )
 
-        self.assertEqual(uploader.call_args.kwargs["type"], ["txt"])
-        self.assertIs(uploader.call_args.kwargs["accept_multiple_files"], False)
-        constructor.assert_called_once_with()
-        fake_service.upload_by_doc.assert_called_once_with("吉林大学历史", "history.txt")
+    def test_selection_and_reruns_only_preview(self) -> None:
+        state = {}
+        for _ in range(2):
+            result = self.run_page(self.uploaded_file(), state=state)
+            result.preview.assert_called_once_with(
+                "吉林大学历史", language=None, wrap_lines=True, height=300
+            )
+            result.button.assert_called_once_with("上传到知识库")
+            result.constructor.assert_not_called()
+            result.service.upload_by_doc.assert_not_called()
+        self.assertNotIn("file_ls_service", state)
+        self.assertEqual(result.uploader.call_args.kwargs["type"], ["txt", "md", "pdf", "docx"])
+        self.assertIs(result.uploader.call_args.kwargs["accept_multiple_files"], False)
+
+    def test_click_uploads_original_text_and_filename(self) -> None:
+        text = "# 吉林大学\n\n历史\n"
+        for name in ("history.txt", "history.md"):
+            with self.subTest(name=name):
+                result = self.run_page(self.uploaded_file(name, text.encode("utf-8-sig")), clicked=True)
+                result.constructor.assert_called_once_with()
+                result.service.upload_by_doc.assert_called_once_with(text, name)
+                self.assertIs(result.state["file_ls_service"], result.service)
+
+    def test_pdf_and_docx_upload_parsed_text(self) -> None:
+        from JLU_agent.services.RAG.parse_file import FileParser
+
+        for name in ("guide.pdf", "guide.docx"):
+            with self.subTest(name=name), patch.object(FileParser, "parse_file", return_value="解析正文") as parser:
+                result = self.run_page(self.uploaded_file(name, b"document bytes"), clicked=True)
+                parser.assert_called_once_with(b"document bytes", name)
+                result.service.upload_by_doc.assert_called_once_with("解析正文", name)
+
+    def test_existing_service_is_reused_only_on_click(self) -> None:
+        service = Mock()
+        state = {"file_ls_service": service}
+        self.run_page(self.uploaded_file(), state=state)
+        service.upload_by_doc.assert_not_called()
+        for _ in range(2):
+            result = self.run_page(self.uploaded_file(), clicked=True, state=state)
+            result.constructor.assert_not_called()
+        self.assertEqual(service.upload_by_doc.call_count, 2)
+        service.upload_by_doc.assert_called_with("吉林大学历史", "history.txt")
+        self.run_page(self.uploaded_file(), state=state)
+        self.assertEqual(service.upload_by_doc.call_count, 2)
+
+    def test_parse_failures_do_not_show_button_or_upload(self) -> None:
+        for name, data in (
+            ("empty.txt", b""), ("blank.md", b" \n"), ("invalid.txt", b"\xff"),
+            ("broken.pdf", b"%PDF-1.7\ncorrupt"), ("broken.docx", b"not a zip"),
+            ("unsupported.doc", b"document"),
+        ):
+            with self.subTest(name=name):
+                result = self.run_page(self.uploaded_file(name, data), clicked=True)
+                result.error.assert_called_once()
+                result.preview.assert_not_called()
+                result.button.assert_not_called()
+                result.constructor.assert_not_called()
+                result.service.upload_by_doc.assert_not_called()
+
+    def test_no_file_does_not_initialize_service(self) -> None:
+        result = self.run_page(None)
+        result.constructor.assert_not_called()
+        result.button.assert_not_called()
+        result.preview.assert_not_called()
+        result.error.assert_not_called()
 
 
 if __name__ == "__main__":

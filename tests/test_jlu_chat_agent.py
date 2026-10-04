@@ -3,6 +3,8 @@
 import importlib
 import os
 import unittest
+import json
+from threading import Event
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
@@ -11,8 +13,8 @@ from unittest.mock import Mock, patch
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.documents import Document
-from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
-from langchain_core.outputs import ChatResult
+from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage, HumanMessage, ToolMessage
+from langchain_core.outputs import ChatGenerationChunk, ChatResult
 from pydantic import Field
 
 from JLU_agent.agents import jlu_chat_agent as agent_module
@@ -29,6 +31,8 @@ class RecordingChatModel(FakeMessagesListChatModel):
 
     received_messages: list[list[BaseMessage]] = Field(default_factory=list)
     bound_tool_names: list[str] = Field(default_factory=list)
+    first_chunk_gate: Any = None
+    completed_streams: int = 0
 
     def bind_tools(self, tools, *, tool_choice=None, **kwargs):
         """记录注册的工具；实际工具执行仍交给真实的 Agent 图。"""
@@ -46,6 +50,20 @@ class RecordingChatModel(FakeMessagesListChatModel):
         return super()._generate(
             messages, stop=stop, run_manager=run_manager, **kwargs
         )
+
+    def _stream(self, messages, stop=None, run_manager=None, **kwargs):
+        response = self._generate(messages, stop=stop, **kwargs).generations[0].message
+        for index, character in enumerate(response.text):
+            yield ChatGenerationChunk(message=AIMessageChunk(content=character))
+            if index == 0 and self.first_chunk_gate is not None:
+                if not self.first_chunk_gate.wait(timeout=5):
+                    raise TimeoutError("页面未在生成完成前收到首个片段")
+        for index, call in enumerate(response.tool_calls):
+            yield ChatGenerationChunk(message=AIMessageChunk(content="", tool_call_chunks=[{
+                "name": call["name"], "args": json.dumps(call["args"]),
+                "id": call["id"], "index": index,
+            }]))
+        self.completed_streams += 1
 
 
 class JLUChatAgentTests(unittest.TestCase):
@@ -115,7 +133,7 @@ class JLUChatAgentTests(unittest.TestCase):
     def test_chat_returns_text_and_passes_system_prompt(self) -> None:
         agent, model = self.make_agent([AIMessage(content="你好，同学！")])
 
-        self.assertEqual(agent.chat("  你好  ", "thread-1"), "你好，同学！")
+        self.assertEqual(agent.stream_chat_with_sources("  你好  ", "thread-1", Mock()).answer, "你好，同学！")
         messages = model.received_messages[0]
         self.assertEqual([message.type for message in messages], ["system", "human"])
         self.assertEqual(messages[0].content, CHAT_MODEL_SYSTEM_PROMPT)
@@ -129,13 +147,88 @@ class JLUChatAgentTests(unittest.TestCase):
         self.rewrite_initializer.assert_not_called()
         self.rewrite_model.invoke.assert_not_called()
 
+    def test_callback_runs_before_generation_finishes(self) -> None:
+        agent, model = self.make_agent([AIMessage(content="你好，同学！")])
+        model.first_chunk_gate = Event()
+        updates = []
+
+        def on_text(text):
+            if not updates:
+                self.assertEqual(model.completed_streams, 0)
+                model.first_chunk_gate.set()
+            updates.append(text)
+
+        result = agent.stream_chat_with_sources("你好", "live-thread", on_text)
+        self.assertEqual(updates, ["你", "你好", "你好，", "你好，同", "你好，同学", "你好，同学！"])
+        self.assertEqual(result.answer, updates[-1])
+        self.assertEqual(model.completed_streams, 1)
+
+    def test_tool_preambles_are_cleared_across_multiple_rounds(self) -> None:
+        first = self.knowledge_request()
+        first.content = "先检索"
+        second = self.knowledge_request()
+        second.content = "再检索"
+        second.tool_calls[0]["id"] = "knowledge-call-2"
+        agent, _ = self.make_agent([first, second, AIMessage(content="最终回答")])
+        updates = []
+        result = agent.stream_chat_with_sources("吉林大学历史", "rounds-thread", updates.append)
+        self.assertEqual(updates, [
+            "先", "先检", "先检索", "", "再", "再检", "再检索", "",
+            "最", "最终", "最终回", "最终回答",
+        ])
+        self.assertEqual(result.answer, "最终回答")
+
+    def test_only_main_model_text_is_forwarded(self) -> None:
+        agent, _ = self.make_agent([AIMessage(content="不会调用模型")])
+        updates = []
+        events = [
+            ("messages", (AIMessageChunk(content="查询改写"), {"langgraph_node": "tools", "langgraph_step": 1})),
+            ("messages", (AIMessageChunk(content="历史总结"), {"langgraph_node": "SummarizationMiddleware.before_model", "langgraph_step": 2})),
+            ("messages", (AIMessageChunk(content=[{"type": "reasoning", "reasoning": "不展示思考"}]), {"langgraph_node": "model", "langgraph_step": 3})),
+            ("messages", (AIMessageChunk(content="临时说明"), {"langgraph_node": "model", "langgraph_step": 3})),
+            ("messages", (AIMessageChunk(content="", tool_call_chunks=[{"name": "search_knowledge_base", "args": "{", "id": "call", "index": 0}]), {"langgraph_node": "model", "langgraph_step": 3})),
+            ("messages", (AIMessageChunk(content="工具调用后的文字"), {"langgraph_node": "model", "langgraph_step": 3})),
+            ("messages", (ToolMessage(content="工具原始结果", tool_call_id="call"), {"langgraph_node": "tools", "langgraph_step": 4})),
+            ("messages", (AIMessageChunk(content="最终"), {"langgraph_node": "model", "langgraph_step": 5})),
+            ("messages", (AIMessageChunk(content=[{"type": "text", "text": "回答"}]), {"langgraph_node": "model", "langgraph_step": 5})),
+            ("values", {"messages": [HumanMessage(content="你好"), AIMessage(content="最终回答")]}),
+        ]
+        with patch.object(agent.agent, "stream", return_value=iter(events)) as stream:
+            result = agent.stream_chat_with_sources("你好", "filter-thread", updates.append)
+        self.assertEqual(updates, ["临时说明", "", "最终", "最终回答"])
+        self.assertEqual(result.answer, "最终回答")
+        stream.assert_called_once()
+        self.assertEqual(stream.call_args.kwargs["stream_mode"], ["messages", "values"])
+
+    def test_interrupted_stream_preserves_error(self) -> None:
+        agent, _ = self.make_agent([AIMessage(content="不会调用模型")])
+        error = ConnectionError("流式连接中断")
+        def interrupted(*args, **kwargs):
+            yield "messages", (AIMessageChunk(content="部分回答"), {"langgraph_node": "model", "langgraph_step": 1})
+            raise error
+        updates = []
+        with patch.object(agent.agent, "stream", side_effect=interrupted):
+            with self.assertRaises(ConnectionError) as context:
+                agent.stream_chat_with_sources("你好", "broken-thread", updates.append)
+        self.assertIs(context.exception, error)
+        self.assertEqual(updates, ["部分回答"])
+
+    def test_missing_final_assistant_message_is_rejected(self) -> None:
+        agent, _ = self.make_agent([AIMessage(content="不会调用模型")])
+        for messages in ([], [HumanMessage(content="你好")], [self.knowledge_request()]):
+            with self.subTest(messages=messages), patch.object(
+                agent.agent, "stream", return_value=iter([("values", {"messages": messages})])
+            ):
+                with self.assertRaisesRegex(RuntimeError, "没有返回助手消息"):
+                    agent.stream_chat_with_sources("你好", "empty-thread", Mock())
+
     def test_same_thread_keeps_history(self) -> None:
         agent, model = self.make_agent(
             [AIMessage(content="第一条回答"), AIMessage(content="第二条回答")]
         )
 
-        agent.chat("第一个问题", "thread-1")
-        agent.chat("第二个问题", "thread-1")
+        agent.stream_chat_with_sources("第一个问题", "thread-1", Mock()).answer
+        agent.stream_chat_with_sources("第二个问题", "thread-1", Mock()).answer
         self.assertEqual(
             [message.content for message in model.received_messages[1]],
             [CHAT_MODEL_SYSTEM_PROMPT, "第一个问题", "第一条回答", "第二个问题"],
@@ -147,8 +240,8 @@ class JLUChatAgentTests(unittest.TestCase):
             [AIMessage(content="第一条回答"), AIMessage(content="第二条回答")]
         )
 
-        self.assertEqual(agent.chat("第一个问题", "thread-1"), "第一条回答")
-        self.assertEqual(agent.chat("第二个问题", "thread-2"), "第二条回答")
+        self.assertEqual(agent.stream_chat_with_sources("第一个问题", "thread-1", Mock()).answer, "第一条回答")
+        self.assertEqual(agent.stream_chat_with_sources("第二个问题", "thread-2", Mock()).answer, "第二条回答")
         self.assertEqual(len(model.received_messages), 2)
         self.assertEqual(
             [message.content for message in model.received_messages[1]],
@@ -160,10 +253,10 @@ class JLUChatAgentTests(unittest.TestCase):
 
         for message in ("", "  \n\t"):
             with self.subTest(message=message), self.assertRaises(ValueError):
-                agent.chat(message, "thread-1")
+                agent.stream_chat_with_sources(message, "thread-1", Mock()).answer
         for message in (None, 123, ["你好"]):
             with self.subTest(message=message), self.assertRaises(TypeError):
-                agent.chat(message, "thread-1")
+                agent.stream_chat_with_sources(message, "thread-1", Mock()).answer
         self.assertEqual(model.received_messages, [])
         self.file_ls_service.search.assert_not_called()
 
@@ -175,19 +268,19 @@ class JLUChatAgentTests(unittest.TestCase):
             ]
         )
         agent, _ = self.make_agent([reply])
-        self.assertEqual(agent.chat("你好", "thread-1"), "你好，同学！")
+        self.assertEqual(agent.stream_chat_with_sources("你好", "thread-1", Mock()).answer, "你好，同学！")
 
     def test_empty_answer_raises_error(self) -> None:
         agent, _ = self.make_agent([AIMessage(content=" \n\t")])
         with self.assertRaisesRegex(RuntimeError, "没有返回有效的回答"):
-            agent.chat("你好", "thread-1")
+            agent.stream_chat_with_sources("你好", "thread-1", Mock()).answer
 
     def test_call_error_is_preserved(self) -> None:
         agent, _ = self.make_agent([AIMessage(content="不会返回")])
         error = ConnectionError("模拟网络连接失败")
-        with patch.object(agent.agent, "invoke", side_effect=error):
+        with patch.object(agent.agent, "stream", side_effect=error):
             with self.assertRaises(ConnectionError) as context:
-                agent.chat("你好", "thread-1")
+                agent.stream_chat_with_sources("你好", "thread-1", Mock()).answer
         self.assertIs(context.exception, error)
 
     def knowledge_request(self) -> AIMessage:
@@ -217,7 +310,7 @@ class JLUChatAgentTests(unittest.TestCase):
             self.knowledge_request(), AIMessage(content=answer),
         ])
 
-        self.assertEqual(agent.chat("吉林大学始建于哪一年？", "rag-thread"), answer)
+        self.assertEqual(agent.stream_chat_with_sources("吉林大学始建于哪一年？", "rag-thread", Mock()).answer, answer)
         self.file_ls_service.search.assert_called_once_with("吉林大学的建校年份是什么？")
         self.rewrite_model.invoke.assert_called_once_with(
             agent_prompts.REWRITE_PROMPT.format(query="吉林大学始建于哪一年？")
@@ -236,7 +329,7 @@ class JLUChatAgentTests(unittest.TestCase):
             self.knowledge_request(), AIMessage(content=answer),
         ])
 
-        result = agent.chat_with_sources("吉林大学始建于哪一年？", "empty-thread")
+        result = agent.stream_chat_with_sources("吉林大学始建于哪一年？", "empty-thread", Mock())
         self.assertEqual(result.answer, answer)
         self.assertEqual(result.reference, [])
         self.assertIn("知识库中暂无足够资料", model.received_messages[1][-1].content)
@@ -262,7 +355,7 @@ class JLUChatAgentTests(unittest.TestCase):
             AIMessage(content="不客气。"),
         ])
 
-        result = agent.chat_with_sources("吉林大学最新通知", "web-thread")
+        result = agent.stream_chat_with_sources("吉林大学最新通知", "web-thread", Mock())
         self.assertEqual(
             [(source.title, source.url) for source in result.reference],
             [("吉林大学官网", "https://www.jlu.edu.cn/news")],
@@ -272,7 +365,7 @@ class JLUChatAgentTests(unittest.TestCase):
         self.assertEqual(model.received_messages[2][-1].name, "search_tavily_web")
         self.tavily.invoke.assert_called_once_with({"query": "吉林大学最新通知"})
 
-        next_result = agent.chat_with_sources("谢谢", "web-thread")
+        next_result = agent.stream_chat_with_sources("谢谢", "web-thread", Mock())
         self.assertEqual(next_result.answer, "不客气。")
         self.assertEqual(next_result.reference, [])
         self.assertEqual(len(model.received_messages), 4)
@@ -283,7 +376,7 @@ class JLUChatAgentTests(unittest.TestCase):
         agent, model = self.make_agent([self.knowledge_request()])
 
         with self.assertRaises(ConnectionError) as context:
-            agent.chat("吉林大学始建于哪一年？", "error-thread")
+            agent.stream_chat_with_sources("吉林大学始建于哪一年？", "error-thread", Mock()).answer
         self.assertIs(context.exception, error)
         self.assertEqual(len(model.received_messages), 1)
 
@@ -305,9 +398,9 @@ class JLUChatAgentTests(unittest.TestCase):
                 AIMessage(content="已查明始建于1946年，来源 introduction.txt。"),
                 AIMessage(content="再见！"),
             ])
-        agent.chat("吉林大学始建于哪一年？", "summary-thread")
-        agent.chat("谢谢", "summary-thread")
-        self.assertEqual(agent.chat("再见", "summary-thread"), "再见！")
+        agent.stream_chat_with_sources("吉林大学始建于哪一年？", "summary-thread", Mock()).answer
+        agent.stream_chat_with_sources("谢谢", "summary-thread", Mock()).answer
+        self.assertEqual(agent.stream_chat_with_sources("再见", "summary-thread", Mock()).answer, "再见！")
         self.assertEqual(len(model.received_messages), 5)
         summary_input = str(model.received_messages[3][0].content)
         self.assertIn("对应知识库文件名或网页标题与链接", summary_input)

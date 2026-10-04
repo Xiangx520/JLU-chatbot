@@ -8,6 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+from JLU_agent.agents import jlu_chat_agent
 from JLU_agent.schemas.structured_output import AnswerInfo, Reference
 
 
@@ -17,7 +18,14 @@ PAGE = Path(__file__).resolve().parents[1] / "streamlit_app" / "pages" / "app_qa
 class ChatPageTests(unittest.TestCase):
     def make_streamlit(self, messages, question=None, response=None):
         agent = Mock()
-        agent.chat_with_sources.return_value = response
+        def stream_answer(question, thread_id, on_text):
+            on_text("临时检索说明")
+            on_text("")
+            on_text(response.answer[:1])
+            on_text(response.answer)
+            return response
+        agent.stream_chat_with_sources.side_effect = stream_answer
+        placeholder = Mock()
         ui = SimpleNamespace(
             session_state={
                 "qa_messages": messages,
@@ -31,11 +39,15 @@ class ChatPageTests(unittest.TestCase):
             link_button=Mock(),
             chat_input=Mock(return_value=question),
             spinner=Mock(side_effect=lambda _: nullcontext()),
+            empty=Mock(return_value=placeholder),
         )
         return ui, agent
 
     def run_page(self, ui):
-        with patch.dict(sys.modules, {"streamlit": ui}):
+        with (
+            patch.dict(sys.modules, {"streamlit": ui}),
+            patch.object(jlu_chat_agent, "JLUChatAgent", side_effect=AssertionError("应复用已有 Agent")),
+        ):
             runpy.run_path(str(PAGE))
 
     def test_history_shows_links_only_for_messages_with_web_sources(self):
@@ -55,7 +67,7 @@ class ChatPageTests(unittest.TestCase):
         ui.link_button.assert_called_once_with(
             "吉林大学官网", "https://www.jlu.edu.cn/news"
         )
-        agent.chat_with_sources.assert_not_called()
+        agent.stream_chat_with_sources.assert_not_called()
 
     def test_new_answer_saves_and_displays_only_current_sources(self):
         response = AnswerInfo(answer="网页回答", reference=[
@@ -65,7 +77,14 @@ class ChatPageTests(unittest.TestCase):
 
         self.run_page(ui)
 
-        agent.chat_with_sources.assert_called_once_with("最新通知", "test-thread")
+        agent.stream_chat_with_sources.assert_called_once_with(
+            "最新通知", "test-thread", ui.empty.return_value.markdown
+        )
+        self.assertEqual(
+            [call.args[0] for call in ui.empty.return_value.markdown.call_args_list],
+            ["临时检索说明", "", "网", "网页回答", "网页回答"],
+        )
+        self.assertEqual(len(ui.session_state["qa_messages"]), 2)
         self.assertEqual(ui.session_state["qa_messages"][-1], {
             "role": "assistant",
             "content": "网页回答",
@@ -82,6 +101,20 @@ class ChatPageTests(unittest.TestCase):
 
         self.assertEqual(ui.session_state["qa_messages"][-1]["reference"], [])
         ui.caption.assert_not_called()
+        ui.link_button.assert_not_called()
+
+    def test_interrupted_stream_does_not_save_partial_answer(self):
+        ui, agent = self.make_streamlit([], "你好")
+        error = ConnectionError("流式连接中断")
+        def interrupted(question, thread_id, on_text):
+            on_text("部分回答")
+            raise error
+        agent.stream_chat_with_sources.side_effect = interrupted
+        with self.assertRaises(ConnectionError) as context:
+            self.run_page(ui)
+        self.assertIs(context.exception, error)
+        self.assertEqual(ui.session_state["qa_messages"], [{"role": "user", "content": "你好"}])
+        ui.empty.return_value.markdown.assert_called_once_with("部分回答")
         ui.link_button.assert_not_called()
 
 
