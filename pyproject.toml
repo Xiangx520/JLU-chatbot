@@ -8,6 +8,7 @@ version = "0.1.0"
 requires-python = ">=3.13"
 dependencies = [
     "bm25s>=0.3.11",
+    "cython>=3.0",
     "dashscope>=1.27.7",
     "langchain>=1.4.2",
     "langchain-chroma>=1.1.0",
@@ -16,14 +17,22 @@ dependencies = [
     "langchain-tavily>=0.2.18",
     "langchain-text-splitters>=1.1.2",
     "langgraph-checkpoint-sqlite>=3.1.1",
+    "numpy>=2.0",
     "pkuseg>=0.0.25",
     "pypdf>=6.0.0",
     "python-docx>=1.2.0",
     "python-dotenv>=1.2.3",
     "sentence-transformers>=6.1.0",
+    "setuptools>=68",
     "streamlit>=1.64.0",
     "torch>=2.14.0",
+    "wheel>=0.45",
 ]
+
+# Community Cloud 的旧版 uv 不支持 extra-build-dependencies。
+# 先安装上述构建依赖，再在项目环境中编译 pkuseg。
+[tool.uv]
+no-build-isolation-package = ["pkuseg"]
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -44,6 +53,3 @@ torch = [{ index = "pytorch-cu130", marker = "sys_platform == 'win32'" }]
 where = ["src"]
 include = ["JLU_agent*"]
 namespaces = false
-
-[tool.uv.extra-build-dependencies]
-pkuseg = ["numpy"]

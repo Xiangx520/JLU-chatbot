@@ -1158,6 +1158,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "bm25s" },
+    { name = "cython" },
     { name = "dashscope" },
     { name = "langchain" },
     { name = "langchain-chroma" },
@@ -1166,19 +1167,23 @@ dependencies = [
     { name = "langchain-tavily" },
     { name = "langchain-text-splitters" },
     { name = "langgraph-checkpoint-sqlite" },
+    { name = "numpy" },
     { name = "pkuseg" },
     { name = "pypdf" },
     { name = "python-docx" },
     { name = "python-dotenv" },
     { name = "sentence-transformers" },
+    { name = "setuptools" },
     { name = "streamlit" },
     { name = "torch", version = "2.14.0", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }, marker = "sys_platform != 'win32'" },
     { name = "torch", version = "2.14.0+cu130", source = { registry = "https://download.pytorch.org/whl/cu130" }, marker = "sys_platform == 'win32'" },
+    { name = "wheel" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "bm25s", specifier = ">=0.3.11" },
+    { name = "cython", specifier = ">=3.0" },
     { name = "dashscope", specifier = ">=1.27.7" },
     { name = "langchain", specifier = ">=1.4.2" },
     { name = "langchain-chroma", specifier = ">=1.1.0" },
@@ -1187,14 +1192,17 @@ requires-dist = [
     { name = "langchain-tavily", specifier = ">=0.2.18" },
     { name = "langchain-text-splitters", specifier = ">=1.1.2" },
     { name = "langgraph-checkpoint-sqlite", specifier = ">=3.1.1" },
+    { name = "numpy", specifier = ">=2.0" },
     { name = "pkuseg", specifier = ">=0.0.25" },
     { name = "pypdf", specifier = ">=6.0.0" },
     { name = "python-docx", specifier = ">=1.2.0" },
     { name = "python-dotenv", specifier = ">=1.2.3" },
     { name = "sentence-transformers", specifier = ">=6.1.0" },
+    { name = "setuptools", specifier = ">=68" },
     { name = "streamlit", specifier = ">=1.64.0" },
     { name = "torch", marker = "sys_platform != 'win32'", specifier = ">=2.14.0" },
     { name = "torch", marker = "sys_platform == 'win32'", specifier = ">=2.14.0", index = "https://download.pytorch.org/whl/cu130" },
+    { name = "wheel", specifier = ">=0.45" },
 ]
 
 [[package]]
@@ -4049,6 +4057,18 @@ wheels = [
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/49/b2/b6987faf330f5af5c787a2610124c2e8403d51724f9001ec4fff6311fe7a/websockets-16.1.1-cp314-cp314t-win32.whl", hash = "sha256:8483c2096363120eea8b07c06ae7304d520f686665fffd4811fad423930a65d7", size = 179729, upload-time = "2026-07-17T22:50:53.269Z" },
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/a2/6e/fbac6ed878dd362fbad7d415fa4f84d38e3e33fed8cde45c64e783acf826/websockets-16.1.1-cp314-cp314t-win_amd64.whl", hash = "sha256:bcce07e23e5769375158f5efdcdafa8d5cd014b93c6683865b840ed65b96f231", size = 180072, upload-time = "2026-07-17T22:50:54.969Z" },
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/be/4d/2d0d67834092e354d2b0498f014a41249a89556bc406cf86f3e1557bb463/websockets-16.1.1-py3-none-any.whl", hash = "sha256:6abbd3e82c731c8e531714466acd5d87b5e88ac3243465337ba71d68e23ae7e3", size = 173814, upload-time = "2026-07-17T22:51:04.184Z" },
+]
+
+[[package]]
+name = "wheel"
+version = "0.48.0"
+source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
+dependencies = [
+    { name = "packaging" },
+]
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/d0/20/50ed6bdf27dec98b568a8ae25dc599f35baa3d9709f9e83fd1edb56b9a90/wheel-0.48.0.tar.gz", hash = "sha256:94800765601e9171bf5d58d066e640662842bcedcbab982b2c90787a2c987322", size = 66471, upload-time = "2026-08-11T22:02:27.327Z" }
+wheels = [
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/2e/29/69cfbb602cd91690c55d38ba9fe53e6a7e76a6fa647bf38f19c138d25449/wheel-0.48.0-py3-none-any.whl", hash = "sha256:3217dcc807155e45db462d7ef2431f5ddda0d7273b700d05a67b271ceb1287ab", size = 33320, upload-time = "2026-08-11T22:02:26.1Z" },
 ]
 
 [[package]]
