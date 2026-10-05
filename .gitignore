@@ -2,6 +2,12 @@
 .env
 .env.*
 !.env.example
+.streamlit/secrets.toml
+.streamlit/secrets.*.toml
+!.streamlit/secrets.example.toml
+
+# 本地安全清理工具与隔离的 Git 历史副本。
+.security-cleanup/
 
 # Python 虚拟环境、缓存和构建产物。
 .venv/
