@@ -24,6 +24,7 @@ from JLU_agent.schemas.agent_prompts import CHAT_MODEL_SYSTEM_PROMPT
 from JLU_agent.schemas import agent_prompts
 from JLU_agent.services.RAG import file_ls, vector_store
 from JLU_agent.tools import knowledge_tools
+from JLU_agent.services.chat_history import ChatHistoryService
 
 
 class RecordingChatModel(FakeMessagesListChatModel):
@@ -398,14 +399,42 @@ class JLUChatAgentTests(unittest.TestCase):
                 AIMessage(content="已查明始建于1946年，来源 introduction.txt。"),
                 AIMessage(content="再见！"),
             ])
-        agent.stream_chat_with_sources("吉林大学始建于哪一年？", "summary-thread", Mock()).answer
-        agent.stream_chat_with_sources("谢谢", "summary-thread", Mock()).answer
-        self.assertEqual(agent.stream_chat_with_sources("再见", "summary-thread", Mock()).answer, "再见！")
+        history = ChatHistoryService("browser-one", config.CHECKPOINT_DIR / "history.db")
+        for question in ("吉林大学始建于哪一年？", "谢谢", "再见"):
+            history.save_user_message("summary-thread", question)
+            response = agent.stream_chat_with_sources(question, "summary-thread", Mock())
+            history.save_assistant_message(
+                "summary-thread", response.answer,
+                [reference.model_dump() for reference in response.reference],
+            )
+        self.assertEqual(response.answer, "再见！")
+        self.assertEqual(len(history.get_messages("summary-thread")), 6)
+        self.assertEqual(history.get_messages("summary-thread")[0]["content"], "吉林大学始建于哪一年？")
         self.assertEqual(len(model.received_messages), 5)
         summary_input = str(model.received_messages[3][0].content)
         self.assertIn("对应知识库文件名或网页标题与链接", summary_input)
         self.assertIn("introduction.txt", summary_input)
         self.assertIn("已查明始建于1946年", str(model.received_messages[4]))
+
+    def test_recreated_agent_resumes_history_thread_without_resending_transcript(self):
+        path = config.CHECKPOINT_DIR / "history.db"
+        history = ChatHistoryService("browser-one", path)
+        agent, _ = self.make_agent([AIMessage(content="第一条回答")])
+        history.save_user_message("saved-thread", "第一个问题")
+        response = agent.stream_chat_with_sources("第一个问题", "saved-thread", Mock())
+        history.save_assistant_message("saved-thread", response.answer, [])
+
+        restored = ChatHistoryService("browser-one", path)
+        thread_id = restored.list_conversations()[0]["thread_id"]
+        new_agent, model = self.make_agent([AIMessage(content="第二条回答")])
+        restored.save_user_message(thread_id, "继续追问")
+        response = new_agent.stream_chat_with_sources("继续追问", thread_id, Mock())
+        restored.save_assistant_message(thread_id, response.answer, [])
+        self.assertEqual(
+            [message.content for message in model.received_messages[0][1:]],
+            ["第一个问题", "第一条回答", "继续追问"],
+        )
+        self.assertEqual(len(restored.get_messages(thread_id)), 4)
 
     def test_import_does_not_load_configuration(self) -> None:
         with (
