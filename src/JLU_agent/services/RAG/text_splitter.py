@@ -36,5 +36,6 @@ class TextSplitterService:
             chunk.id = f"{content_hash}-{index}"
             chunk.metadata["id"] = chunk.id
             chunk.metadata["chunk_index"] = index
+            chunk.metadata["content_hash"] = content_hash
 
         return chunks

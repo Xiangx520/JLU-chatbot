@@ -32,6 +32,22 @@ class VectorStoreService:
 
         self.chroma.add_documents(chunks)
 
+    def get_chunks(self, filename: str | None = None) -> list[Document]:
+        result = self.chroma.get(
+            where={"source": filename} if filename is not None else None,
+            include=["documents", "metadatas"],
+        )
+        return [
+            Document(id=doc_id, page_content=text, metadata=metadata)
+            for doc_id, text, metadata in zip(
+                result["ids"], result["documents"], result["metadatas"]
+            )
+        ]
+
+    def delete_chunks(self, ids: list[str]) -> None:
+        if ids:
+            self.chroma.delete(ids=ids)
+
 
 
     def search(self, query: str) -> list[tuple[Document, float | int]]:

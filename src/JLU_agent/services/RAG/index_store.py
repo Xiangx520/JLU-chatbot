@@ -23,12 +23,6 @@ class IndexStoreService:
         self.seg = pkuseg.pkuseg()          # 中文分词器
         self.retriever = None
 
-        with UPLOAD_LOCK:
-            if config.INDEX_PATH.is_dir() and any(config.INDEX_PATH.iterdir()):
-                self.retriever = bm25s.BM25.load(
-                    config.INDEX_PATH, load_corpus=True, show_progress=False
-                )
-
     def upload_into_bm5(self, chunks: list[Document]):
         """合并新旧文档块，重新建立并保存 BM25 索引。"""
         if not chunks:
@@ -56,15 +50,39 @@ class IndexStoreService:
                     "create_time": doc.metadata.get("create_time"),
                 }
 
-            corpus = list(corpus_by_id.values())
-            tokens = [self.seg.cut(item["content"]) for item in corpus]
-            retriever = bm25s.BM25(k1=config.K1, b=config.B, corpus=corpus)
-            retriever.index(tokens, show_progress=False)
+            return self._save_corpus(list(corpus_by_id.values()))
 
-            config.INDEX_PATH.mkdir(parents=True, exist_ok=True)
-            retriever.save(config.INDEX_PATH, corpus=corpus, show_progress=False)
-            self.retriever = retriever
-            return self.retriever
+    def rebuild(self, chunks: list[Document]) -> None:
+        """以当前向量库切片完整替换索引。"""
+        with UPLOAD_LOCK:
+            corpus = [
+                {
+                    "id": doc.id,
+                    "content": doc.page_content,
+                    "source": doc.metadata.get("source"),
+                    "chunk_index": doc.metadata.get("chunk_index"),
+                    "create_time": doc.metadata.get("create_time"),
+                }
+                for doc in chunks
+            ]
+            self._save_corpus(corpus)
+
+    def _save_corpus(self, corpus: list[dict]):
+        if not corpus:
+            if config.INDEX_PATH.exists():
+                for path in config.INDEX_PATH.iterdir():
+                    if path.is_file():
+                        path.unlink()
+            self.retriever = None
+            return None
+
+        tokens = [self.seg.cut(item["content"]) for item in corpus]
+        retriever = bm25s.BM25(k1=config.K1, b=config.B, corpus=corpus)
+        retriever.index(tokens, show_progress=False)
+        config.INDEX_PATH.mkdir(parents=True, exist_ok=True)
+        retriever.save(config.INDEX_PATH, corpus=corpus, show_progress=False)
+        self.retriever = retriever
+        return retriever
 
     def search(self, query: str) -> list[tuple[Document, float]]:
         """按关键词检索文档块，返回文档及其 BM25 分数。"""
