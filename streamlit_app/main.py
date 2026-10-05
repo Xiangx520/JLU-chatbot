@@ -27,6 +27,14 @@ def show_home():
     # 说明当前开发进度。
     st.info("通过侧边栏进入功能页面。更多功能正在开发中...")
 
+    st.subheader("项目与联系")
+    st.code(
+        "GitHub：https://github.com/Xiangx520/JLU-chatbot\n"
+        "QQ 邮箱：3010799110@qq.com",
+        language=None,
+        wrap_lines=True,
+    )
+
 
 # 注册页面，并在侧边栏显示导航选项。
 page = st.navigation(
