@@ -23,7 +23,7 @@
 | 对话与查询改写 | DeepSeek |
 | 文本嵌入 | DashScope |
 | 向量检索 | Chroma |
-| 关键词检索 | bm25s、pkuseg 中文分词 |
+| 关键词检索 | bm25s、spacy-pkuseg 中文分词（mixed 模型） |
 | 检索融合与重排 | RRF、Sentence Transformers CrossEncoder |
 | 联网搜索 | Tavily |
 | 文档解析 | pypdf、python-docx |
@@ -45,6 +45,8 @@ uv sync
 ```
 
 当前配置在 Windows 上使用 PyTorch CUDA 13.0 软件源。检索重排会根据 `torch.cuda.is_available()` 自动选择 CUDA 或 CPU；首次安装与首次检索可能需要较长时间。
+
+中文分词使用 `spacy-pkuseg` 的预编译包，避免原 `pkuseg` 在云端源码构建时缺少依赖的问题。首次初始化知识库时会下载 `mixed` 分词模型，后续复用本地缓存。
 
 ### 2. 配置密钥
 

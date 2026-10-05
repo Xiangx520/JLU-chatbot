@@ -3,7 +3,7 @@
 import threading
 
 import bm25s
-import pkuseg
+import spacy_pkuseg as pkuseg
 from langchain_core.documents import Document
 
 from JLU_agent.config import chroma_config as config
@@ -20,7 +20,8 @@ class IndexStoreService:
     """管理 BM25 索引的加载和入库。"""
 
     def __init__(self) -> None:
-        self.seg = pkuseg.pkuseg()          # 中文分词器
+        # 使用维护版的预编译包，保留原 pkuseg 默认的混合语料模型。
+        self.seg = pkuseg.pkuseg(model_name="mixed")
         self.retriever = None
 
     def upload_into_bm5(self, chunks: list[Document]):
