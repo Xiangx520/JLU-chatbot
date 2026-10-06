@@ -4,11 +4,11 @@ import hashlib
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from JLU_agent.config import chroma_config as config
+from JLU_agent.config import rag_config as config
 
 
 class TextSplitterService:
-    """将 TXT 正文切片，并为两种索引生成相同的片段标识。"""
+    """将文档正文切片，生成稳定 ID 与去重元数据。"""
 
     def __init__(self):
         self.splitter = RecursiveCharacterTextSplitter(
@@ -30,7 +30,7 @@ class TextSplitterService:
             ],
         )
 
-        # 同一份内容重试时沿用 ID，Chroma 更新已有片段，BM25 按 ID 合并。
+        # 同一份内容重试时沿用 ID，Milvus 可幂等补写缺失片段。
         content_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
         for index, chunk in enumerate(chunks):
             chunk.id = f"{content_hash}-{index}"

@@ -1,4 +1,4 @@
-"""使用模拟 Chroma 验证检索与工具封装，不连接实际知识库。"""
+"""使用模拟知识库验证工具封装，不连接外部服务。"""
 
 import json
 import unittest
@@ -9,10 +9,8 @@ from langchain_core.messages import AIMessage
 from langchain_core.tools import ToolException
 
 from JLU_agent.config import agent_config
-from JLU_agent.config import chroma_config as config
 from JLU_agent.schemas import agent_prompts
 from JLU_agent.services.RAG.file_ls import FileLoaderAndSearchService
-from JLU_agent.services.RAG.vector_store import VectorStoreService
 from JLU_agent.tools import knowledge_tools
 
 create_tools = knowledge_tools.create_tools
@@ -20,10 +18,6 @@ create_tools = knowledge_tools.create_tools
 
 class KnowledgeToolsTests(unittest.TestCase):
     def setUp(self) -> None:
-        # 跳过真实构造过程，避免读取密钥或打开项目知识库。
-        self.vector_store = object.__new__(VectorStoreService)
-        self.vector_store.chroma = Mock()
-        self.vector_store.chroma.similarity_search_with_score.return_value = []
         self.service = Mock(spec=FileLoaderAndSearchService)
         self.service.search.return_value = []
 
@@ -51,31 +45,6 @@ class KnowledgeToolsTests(unittest.TestCase):
         )
         self.model_initializer = model_patch.start()
         self.addCleanup(model_patch.stop)
-
-    def test_search_uses_configured_limit_and_preserves_documents(self) -> None:
-        documents = [(
-            Document(
-                page_content="吉林大学始建于1946年。",
-                metadata={"source": "introduction.txt"},
-            ),
-            0.1,
-        )]
-        self.vector_store.chroma.similarity_search_with_score.return_value = documents
-        with patch.object(config, "K", 3):
-            result = self.vector_store.search("  吉林大学始建于哪一年？  ")
-        self.assertIs(result, documents)
-        self.vector_store.chroma.similarity_search_with_score.assert_called_once_with(
-            "吉林大学始建于哪一年？", k=3
-        )
-
-    def test_invalid_queries_do_not_search(self) -> None:
-        for query in (None, 123):
-            with self.subTest(query=query), self.assertRaises(TypeError):
-                self.vector_store.search(query)
-        for query in ("", " \n\t"):
-            with self.subTest(query=query), self.assertRaises(ValueError):
-                self.vector_store.search(query)
-        self.vector_store.chroma.similarity_search_with_score.assert_not_called()
 
     def test_factory_and_tool_format_multiple_sources(self) -> None:
         self.service.search.return_value = [

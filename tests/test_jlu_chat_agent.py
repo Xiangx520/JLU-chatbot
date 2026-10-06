@@ -19,10 +19,10 @@ from pydantic import Field
 
 from JLU_agent.agents import jlu_chat_agent as agent_module
 from JLU_agent.config import agent_config as config
-from JLU_agent.config import chroma_config
+from JLU_agent.config import rag_config
 from JLU_agent.schemas.agent_prompts import CHAT_MODEL_SYSTEM_PROMPT
 from JLU_agent.schemas import agent_prompts
-from JLU_agent.services.RAG import file_ls, vector_store
+from JLU_agent.services.RAG import file_ls, milvus_store
 from JLU_agent.tools import knowledge_tools
 from JLU_agent.services.chat_history import ChatHistoryService
 
@@ -439,8 +439,8 @@ class JLUChatAgentTests(unittest.TestCase):
     def test_import_does_not_load_configuration(self) -> None:
         with (
             patch.object(config, "get_deepseek_api_key", side_effect=AssertionError),
-            patch.object(chroma_config, "get_dashscope_api_key", side_effect=AssertionError),
-            patch.object(vector_store, "Chroma", side_effect=AssertionError),
+            patch.object(rag_config, "get_dashscope_api_key", side_effect=AssertionError),
+            patch.object(milvus_store, "Milvus", side_effect=AssertionError),
             patch.object(agent_module.sqlite3, "connect", side_effect=AssertionError),
         ):
             importlib.reload(knowledge_tools)

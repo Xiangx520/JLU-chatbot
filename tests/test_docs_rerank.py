@@ -1,4 +1,4 @@
-"""用模拟检索结果和模型验证 RRF 与交叉编码重排。"""
+"""验证 Milvus 候选在本地模型中重排，保留最终得分与元数据。"""
 
 import sys
 import unittest
@@ -10,26 +10,11 @@ from langchain_core.documents import Document
 from JLU_agent.services.RAG.docs_reranker import (
     cross_encoder_rerank,
     get_cross_encoder,
-    reciprocal_rank_fusion,
-    rerank,
 )
 from JLU_agent.services.RAG.file_ls import FileLoaderAndSearchService
 
 
 class RerankTests(unittest.TestCase):
-    def test_rrf_uses_rank_and_deduplicates_ids(self) -> None:
-        shared = Document(id="shared", page_content="共同结果")
-        vector_only = Document(id="vector", page_content="向量结果")
-        bm25_only = Document(id="bm25", page_content="关键词结果")
-
-        results = reciprocal_rank_fusion([
-            [(shared, 100.0), (vector_only, -5.0)],
-            [(bm25_only, 0.1), (shared, 999.0)],
-        ])
-
-        self.assertEqual(len(results), 3)
-        self.assertEqual([doc.id for doc in results], ["shared", "bm25", "vector"])
-
     def test_cross_encoder_keeps_negative_scores_and_metadata(self) -> None:
         documents = [
             Document(id=str(index), page_content=f"正文{index}", metadata={"source": f"来源{index}.txt"})
@@ -70,7 +55,7 @@ class RerankTests(unittest.TestCase):
         model.predict.return_value = [-3.0, -2.0, -1.0, 0.0, 1.0, 2.0]
 
         with patch("JLU_agent.services.RAG.docs_reranker.get_cross_encoder", return_value=model):
-            results = rerank("问题", vector_results, bm25_results)
+            results = cross_encoder_rerank("问题", [doc for doc, _ in vector_results + bm25_results])
 
         self.assertEqual(len(model.predict.call_args.args[0]), 6)
         self.assertEqual(len(results), 3)
@@ -100,24 +85,22 @@ class RerankTests(unittest.TestCase):
         model.predict.side_effect = RuntimeError("推理失败")
         with patch("JLU_agent.services.RAG.docs_reranker.get_cross_encoder", return_value=model):
             with self.assertRaisesRegex(RuntimeError, "推理失败"):
-                rerank("问题", [(document, 0.1)], [])
+                cross_encoder_rerank("问题", [document])
 
-    def test_empty_results_and_search_service_calls_both_stores(self) -> None:
+    def test_empty_results_and_search_service_calls_milvus(self) -> None:
         with patch("JLU_agent.services.RAG.docs_reranker.get_cross_encoder") as load_model:
-            self.assertEqual(rerank("吉林大学", [], []), [])
+            self.assertEqual(cross_encoder_rerank("吉林大学", []), [])
             load_model.assert_not_called()
 
         service = object.__new__(FileLoaderAndSearchService)
         near = Document(id="near", page_content="吉林大学历史")
-        service.vectorStoreService = SimpleNamespace(search=Mock(return_value=[(near, 0.1)]))
-        service.indexStoreService = SimpleNamespace(search=Mock(return_value=[]))
+        service.milvusStoreService = SimpleNamespace(search=Mock(return_value=[(near, 0.1)]))
         model = Mock()
         model.predict.return_value = [2.0]
         with patch("JLU_agent.services.RAG.docs_reranker.get_cross_encoder", return_value=model):
             results = service.search("吉林大学")
 
-        service.vectorStoreService.search.assert_called_once_with("吉林大学")
-        service.indexStoreService.search.assert_called_once_with("吉林大学")
+        service.milvusStoreService.search.assert_called_once_with("吉林大学")
         model.predict.assert_called_once_with([("吉林大学", "吉林大学历史")])
         self.assertEqual([doc.id for doc, _ in results], ["near"])
 

@@ -18,6 +18,12 @@ build/
 dist/
 .pytest_cache/
 
+# 知识库运行数据由 Docker 持久化卷保存；忽略旧版及手动创建的本地数据。
+/volumes/
+/src/JLU_agent/repo/chroma_db/
+/src/JLU_agent/repo/index_db/
+/src/JLU_agent/repo/md5.txt
+
 # 短期记忆数据库及 SQLite 的日志文件。
 /src/JLU_agent/repo/short-term_memory/*.db
 /src/JLU_agent/repo/short-term_memory/*.db-*

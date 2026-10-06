@@ -10,7 +10,7 @@ def run_operation(action, success_message=None):
         with st.spinner("正在处理知识库……"):
             result = action()
     except Exception as exc:
-        st.error(f"操作未全部完成：{exc}。请重试，或点击“重建检索索引”恢复索引同步。")
+        st.error(f"操作未全部完成：{exc}。请检查 Milvus 服务并重试。")
         return False
     st.session_state["knowledge_notice"] = success_message or result
     st.session_state["knowledge_reset_selection"] = True
@@ -102,8 +102,6 @@ def main():
 
     service = st.session_state["file_ls_service"]
     show_upload(service)
-    if st.button("重建检索索引"):
-        run_operation(service.rebuild_index, "检索索引已重建。")
     show_documents(service)
 
 
