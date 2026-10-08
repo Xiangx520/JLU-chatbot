@@ -9,16 +9,19 @@ requires-python = ">=3.13"
 dependencies = [
     "dashscope>=1.27.7",
     "langchain>=1.4.2",
-    "langchain-community>=0.4.2",
+    # Ragas 0.4.3 imports legacy VertexAI modules removed in community 0.4.2.
+    "langchain-community>=0.4.1,<0.4.2",
     "langchain-deepseek>=1.1.1",
     "langchain-milvus>=0.4.0",
     "langchain-tavily>=0.2.18",
     "langchain-text-splitters>=1.1.2",
     "langgraph-checkpoint-sqlite>=3.1.1",
+    "openai>=2.0.0",
     "pymilvus>=3.0.2",
     "pypdf>=6.0.0",
     "python-docx>=1.2.0",
     "python-dotenv>=1.2.3",
+    "ragas==0.4.3",
     "sentence-transformers>=6.1.0",
     "streamlit>=1.64.0",
     "torch>=2.14.0",
@@ -42,4 +45,5 @@ torch = [{ index = "pytorch-cu130", marker = "sys_platform == 'win32'" }]
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["JLU_agent*"]
+exclude = ["JLU_agent.evaluation*"]
 namespaces = false

@@ -159,7 +159,6 @@ JLU-chatbot-main/
 │   └── repo/
 │       ├── materials/          # 校园资料
 │       └── short-term_memory/  # Agent 检查点与聊天记录数据库
-├── tests/                      # unittest 测试
 ├── docker-compose.yaml         # Milvus、etcd、MinIO 与持久化卷
 ├── .env.example                # 密钥配置示例
 ├── pyproject.toml              # 项目元数据与依赖配置
@@ -190,36 +189,6 @@ JLU-chatbot-main/
 
 更换嵌入模型或向量维度后，配置新的 Collection 名并重新上传全部资料。初始化保留已有 Collection；应用不提供旧双库兼容或“重建检索索引”操作。文件替换支持失败重试，但多步骤替换不是文档级事务；当前写锁仅协调同一个应用进程。
 
-## 测试
-
-在项目根目录运行已有测试：
-
-```bash
-uv run python -m unittest discover -s tests -v
-```
-
-默认测试覆盖文件解析、Milvus 配置与接口、分页读取、混合检索参数、上传与替换重试、本地重排、工具调用、Agent 流式响应、聊天历史和 Streamlit 页面流程。模型与 Milvus 服务使用模拟对象，真实服务集成测试默认跳过。
-
-启动 Milvus 后，在 PowerShell 中运行真实服务集成测试（使用本地模拟嵌入，无需 API 密钥或模型下载）：
-
-```powershell
-$env:RUN_MILVUS_INTEGRATION = "1"
-uv run python -m unittest discover -s tests -p test_milvus_integration.py -v
-```
-
-测试使用独立的随机 Collection，并在结束后删除测试 Collection。另设 `MILVUS_TEST_URI`、`MILVUS_TEST_TOKEN`、`MILVUS_TEST_DB_NAME` 可连接专用测试服务，默认连接本地 `default` 数据库。
-
-在本地 Compose 服务空闲时，可额外启用重启持久化测试；此操作会短暂重启 `standalone`：
-
-```powershell
-$env:RUN_MILVUS_RESTART = "1"
-uv run python -m unittest discover -s tests -p test_milvus_integration.py -v
-Remove-Item Env:RUN_MILVUS_RESTART
-Remove-Item Env:RUN_MILVUS_INTEGRATION
-```
-
-真实 API、模型下载和真实 Milvus 验收需分别验证，模拟测试通过不代表这些外部服务已验证。
-
 ## 使用说明与限制
 
 - TXT 和 Markdown 文件需要采用 UTF-8 编码。
@@ -230,7 +199,7 @@ Remove-Item Env:RUN_MILVUS_INTEGRATION
 
 ## 提交到 GitHub 前
 
-- 仅提交 `.env.example`，检查待提交内容中没有真实 API 密钥。
+- 仅提交 `.env.example`，检查待提交内容中没有真实 API 密钥。测试、RAG 评估代码和报告保留在本地，不随发布提交。
 - Milvus 数据由 Docker 命名卷保存，不提交到 Git；旧版知识库数据已从当前工作区移除，本次清理不重写历史提交。
 - 聊天记录和 Agent 检查点位于 `repo/short-term_memory/`，对应数据库及日志文件已有忽略规则。
 - 当前项目尚未提供 `LICENSE` 文件；如计划允许他人按开源协议使用，请选择合适的许可证后补充。

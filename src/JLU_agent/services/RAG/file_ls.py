@@ -11,9 +11,9 @@ from JLU_agent.services.RAG.docs_reranker import cross_encoder_rerank
 class FileLoaderAndSearchService:
     """管理知识文档，使用 Milvus 混合检索并进行本地重排。"""
 
-    def __init__(self):
+    def __init__(self, *, store: MilvusStoreService | None = None):
         self.textSplitterService = TextSplitterService()
-        self.milvusStoreService = MilvusStoreService()
+        self.milvusStoreService = store if store is not None else MilvusStoreService()
 
     def list_documents(self) -> list[dict]:
         with UPLOAD_LOCK:
@@ -48,6 +48,7 @@ class FileLoaderAndSearchService:
             # 根据原文哈希去重，无须恢复原文或重算向量。
             duplicate = next(
                 (
+                    # 文档名不同内容相同
                     doc for doc in existing
                     if doc.metadata["content_hash"] == content_hash
                     and doc.metadata["source"] != filename

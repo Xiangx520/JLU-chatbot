@@ -30,3 +30,26 @@ dist/
 
 # 编辑器配置。
 .idea/
+
+# 本地 Ragas 实验、逐题日志和报告。
+/evaluation_runs/
+
+# 测试与评估代码保留本地，不进入发布提交。
+/tests/
+/src/JLU_agent/evaluation/
+/scripts/build_eval_dataset.py
+/docs/rag_evaluation.md
+/docs/rag_resume_summary.md
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# 本地凭据文件；仅保留空值示例。
+.envrc
+*.pem
+*.key
+credentials.json
+secrets.json
+secrets.yaml
+secrets.yml
