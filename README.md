@@ -4,7 +4,7 @@
 
 项目处于开发阶段，当前已提供聊天问答、知识库管理和历史对话功能。
 
-项目部署地址：https://chat.kissxiangx.fun
+项目部署地址：https://chat.jlubot.asia
 
 ## 功能
 
