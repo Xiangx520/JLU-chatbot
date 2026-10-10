@@ -2,14 +2,12 @@ import hashlib
 
 from langchain_core.documents import Document
 
-from JLU_agent.config import rag_config as config
 from JLU_agent.services.RAG.milvus_store import MilvusStoreService, UPLOAD_LOCK
 from JLU_agent.services.RAG.text_splitter import TextSplitterService
-from JLU_agent.services.RAG.docs_reranker import cross_encoder_rerank
 
 
 class FileLoaderAndSearchService:
-    """管理知识文档，使用 Milvus 混合检索并进行本地重排。"""
+    """管理知识文档，直接返回 Milvus RRF 融合后的混合检索结果。"""
 
     def __init__(self, *, store: MilvusStoreService | None = None):
         self.textSplitterService = TextSplitterService()
@@ -82,6 +80,6 @@ class FileLoaderAndSearchService:
             self.milvusStoreService.delete_chunks([doc.id for doc in chunks])
 
     def search(self, query: str) -> list[tuple[Document, float]]:
+        """保留 RRF 的结果顺序和得分，不加载或调用本地重排模型。"""
         with UPLOAD_LOCK:
-            candidates = self.milvusStoreService.search(query)
-        return cross_encoder_rerank(query.strip(), [doc for doc, _ in candidates], top_k=config.K)
+            return self.milvusStoreService.search(query)

@@ -1075,8 +1075,12 @@ dependencies = [
     { name = "python-docx" },
     { name = "python-dotenv" },
     { name = "ragas" },
-    { name = "sentence-transformers" },
     { name = "streamlit" },
+]
+
+[package.optional-dependencies]
+rerank = [
+    { name = "sentence-transformers" },
     { name = "torch", version = "2.14.0", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }, marker = "sys_platform != 'win32'" },
     { name = "torch", version = "2.14.0+cu130", source = { registry = "https://download.pytorch.org/whl/cu130" }, marker = "sys_platform == 'win32'" },
 ]
@@ -1097,11 +1101,12 @@ requires-dist = [
     { name = "python-docx", specifier = ">=1.2.0" },
     { name = "python-dotenv", specifier = ">=1.2.3" },
     { name = "ragas", specifier = "==0.4.3" },
-    { name = "sentence-transformers", specifier = ">=6.1.0" },
+    { name = "sentence-transformers", marker = "extra == 'rerank'", specifier = ">=6.1.0" },
     { name = "streamlit", specifier = ">=1.64.0" },
-    { name = "torch", marker = "sys_platform != 'win32'", specifier = ">=2.14.0" },
-    { name = "torch", marker = "sys_platform == 'win32'", specifier = ">=2.14.0", index = "https://download.pytorch.org/whl/cu130" },
+    { name = "torch", marker = "sys_platform == 'win32' and extra == 'rerank'", specifier = ">=2.14.0", index = "https://download.pytorch.org/whl/cu130" },
+    { name = "torch", marker = "sys_platform != 'win32' and extra == 'rerank'", specifier = ">=2.14.0" },
 ]
+provides-extras = ["rerank"]
 
 [[package]]
 name = "joblib"

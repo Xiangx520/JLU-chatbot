@@ -7,7 +7,7 @@
 ## 功能
 
 - **流式聊天**：逐步展示模型回答，支持连续追问。
-- **知识库问答**：文档正文、元数据、向量和内置 BM25 保存在同一个 Milvus Collection，服务端用 RRF 融合候选，再通过本地交叉编码模型重排。
+- **知识库问答**：文档正文、元数据、向量和内置 BM25 保存在同一个 Milvus Collection，服务端用 RRF 融合候选，按融合顺序直接返回给 Agent。
 - **网页搜索**：Agent 可按需调用 Tavily 补充知识库不足的信息，页面展示本轮搜索来源链接。
 - **知识库管理**：支持上传 TXT、Markdown、PDF、DOCX，预览解析正文、按文件名搜索、查看入库片段、替换同名文档和删除文档。
 - **内容去重与重试恢复**：相同正文避免重复入库；稳定切片 ID 支持补写缺失片段，替换时确认新切片完整入库后才删除旧片段。
@@ -24,7 +24,8 @@
 | 文本嵌入 | DashScope |
 | 知识库存储与向量检索 | Milvus 3.0.2、langchain-milvus、pymilvus |
 | 关键词检索 | Milvus 内置 BM25、chinese 分析器 |
-| 检索融合与重排 | Milvus RRF、Sentence Transformers CrossEncoder |
+| 检索融合 | Milvus RRF |
+| 保留的本地重排代码（应用不调用） | Sentence Transformers CrossEncoder，可选 `rerank` 依赖 |
 | 联网搜索 | Tavily |
 | 文档解析 | pypdf、python-docx |
 | 依赖管理 | uv、pyproject.toml、uv.lock |
@@ -37,15 +38,23 @@
 - 已安装 `uv`，可通过 `uv --version` 检查。
 - 已安装 Docker 与 Docker Compose V2。Windows 使用 Docker Desktop，开启 WSL 2 后端和 Linux containers；先启动 Docker Desktop，再运行 `docker version` 和 `docker compose version` 检查。
 - 准备 DeepSeek、DashScope 和 Tavily 的 API 密钥。
-- 安装依赖、调用外部 API，以及首次下载本地重排模型时需要网络连接。
+- 安装依赖和调用外部 API 时需要网络连接；应用不下载或加载本地重排模型。
 
 在克隆后的项目根目录执行：
 
 ```bash
-uv sync
+uv sync --locked
 ```
 
-当前配置在 Windows 上使用 PyTorch CUDA 13.0 软件源。检索重排会根据 `torch.cuda.is_available()` 自动选择 CUDA 或 CPU；首次安装与首次检索可能需要较长时间。
+默认安装不包含 PyTorch 和 Sentence Transformers，检索结果由 Milvus RRF 融合后直接返回，无需本地重排模型或 GPU。
+
+`docs_reranker.py` 中的独立重排代码及模型配置仍然保留。需要单独调用它时，先安装可选依赖：
+
+```bash
+uv sync --locked --extra rerank
+```
+
+安装 `rerank` 扩展不会让应用启用重排；应用没有重排开关。保留的函数在被手动调用时才加载模型，并根据 `torch.cuda.is_available()` 选择 CUDA 或 CPU；首次调用需要下载模型。该扩展在 Windows 上继续使用 PyTorch CUDA 13.0 软件源。
 
 中文分词和 BM25 索引由 Milvus 服务维护，应用无需下载独立分词模型或维护第二份索引。
 
@@ -131,12 +140,12 @@ uv run streamlit run streamlit_app/main.py
                                             └→ 服务端生成 BM25 稀疏向量
 
 用户提问 → Agent（会话上下文）
-             ├→ 知识库工具：查询改写 → Milvus 向量 + BM25 → Milvus RRF → 本地重排
+             ├→ 知识库工具：查询改写 → Milvus 向量 + BM25 → Milvus RRF → 返回 Agent
              └→ 网页搜索工具：Tavily → 标题、链接、摘要
           → 流式回答 → 保存完整聊天记录与网页来源
 ```
 
-Agent 根据问题和工具结果决定检索与回答流程。知识库工具返回正文及来源文件名；页面的“搜索来源”按钮展示 Tavily 返回的网页链接。
+Agent 根据问题和工具结果决定检索与回答流程。知识库工具按 RRF 融合顺序返回全部候选（当前最多 6 条），包含正文、来源文件名和 RRF 融合得分；该得分不是本地模型重排分数。页面的“搜索来源”按钮展示 Tavily 返回的网页链接。
 
 ## 项目结构
 
@@ -154,7 +163,7 @@ JLU-chatbot-main/
 │   ├── tools/                  # 知识库及网页检索工具
 │   ├── services/
 │   │   ├── chat_history.py     # 完整聊天记录存储
-│   │   └── RAG/                # 解析、切分、Milvus 存储、检索与重排
+│   │   └── RAG/                # 解析、切分、Milvus 存储、检索及保留的重排代码
 │   ├── ui/                     # 浏览器历史归属标识
 │   └── repo/
 │       ├── materials/          # 校园资料
@@ -170,7 +179,7 @@ JLU-chatbot-main/
 模型名称等参数通过 Python 配置文件设置，`.env` 用于配置 API 密钥和 Milvus 连接。
 
 - [`agent_config.py`](src/JLU_agent/config/agent_config.py)：对话模型、查询改写模型、超时、重试、总结阈值、Tavily 参数与会话数据库路径。
-- [`rag_config.py`](src/JLU_agent/config/rag_config.py)：嵌入模型、重排模型、文本切分参数、检索数量与 Milvus 连接读取。
+- [`rag_config.py`](src/JLU_agent/config/rag_config.py)：嵌入模型、保留的重排模型配置、文本切分参数、检索数量与 Milvus 连接读取。
 
 当前配置如下，使用前可根据 API 账户支持的模型调整：
 
@@ -179,12 +188,12 @@ JLU-chatbot-main/
 | 对话模型 | `deepseek-v4-pro` |
 | 查询改写模型 | `deepseek-flash` |
 | 嵌入模型 | `qwen3.7-text-embedding-flash` |
-| 本地重排模型 | `Qwen/Qwen3-Reranker-0.6B` |
+| 保留的本地重排模型（应用不调用） | `Qwen/Qwen3-Reranker-0.6B` |
 | 文本切片大小 / 重叠 | `1000` / `100` 字符 |
 | 向量与 BM25 单路检索数量 | 最多各 `3` 条 |
-| Milvus RRF 候选数量 / 平滑参数 | 最多 `6` 条 / `60` |
+| Milvus RRF 返回 Agent 的数量 / 平滑参数 | 最多 `6` 条 / `60` |
 | Milvus 索引与一致性 | dense COSINE/AUTOINDEX、sparse BM25/SPARSE_INVERTED_INDEX、Strong |
-| 重排输出数量 | 最多 `3` 条，默认值定义于 `docs_reranker.py` |
+| 独立重排函数的默认输出数量（应用不使用） | 最多 `3` 条，默认值定义于 `docs_reranker.py` |
 | 总结触发 / 保留近期消息数 | `20` / `6` |
 
 更换嵌入模型或向量维度后，配置新的 Collection 名并重新上传全部资料。初始化保留已有 Collection；应用不提供旧双库兼容或“重建检索索引”操作。文件替换支持失败重试，但多步骤替换不是文档级事务；当前写锁仅协调同一个应用进程。
